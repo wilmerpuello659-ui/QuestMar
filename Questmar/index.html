@@ -1,0 +1,2077 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Super Mario Realista en Primera Persona - Meta Quest WebXR</title>
+  <style>
+    :root {
+      --primary-red: #e52521;
+      --mario-blue: #002fbe;
+      --coin-gold: #fcd116;
+      --pipe-green: #009b48;
+      --dark-glass: rgba(12, 16, 26, 0.85);
+      --border-glow: rgba(255, 255, 255, 0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #050811;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #ffffff;
+    }
+
+    #webgl-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* 2D HUD (Fallback para Modo Escritorio y Mirror Screen) */
+    #desktop-hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      background: var(--dark-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-glow);
+      padding: 12px 24px;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .hud-metric {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .hud-hearts {
+      color: #ff3344;
+      text-shadow: 0 0 12px rgba(255, 51, 68, 0.7);
+      font-size: 1.3rem;
+    }
+
+    .hud-coins {
+      color: var(--coin-gold);
+      text-shadow: 0 0 12px rgba(252, 209, 22, 0.6);
+    }
+
+    .hud-score {
+      color: #7dd3fc;
+    }
+
+    /* Red Damage Vignette Flash */
+    #damage-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 8;
+      pointer-events: none;
+      background: radial-gradient(circle, transparent 60%, rgba(229, 37, 33, 0.85) 100%);
+      opacity: 0;
+      transition: opacity 0.1s ease;
+    }
+
+    /* Pantalla de Bienvenida / VR Launcher */
+    #launcher-ui {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: radial-gradient(circle at center, rgba(16, 24, 48, 0.94) 0%, rgba(4, 7, 16, 0.98) 100%);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 24px;
+      text-align: center;
+    }
+
+    .launcher-card {
+      max-width: 580px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      padding: 36px 28px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 40px rgba(229, 37, 33, 0.15);
+      animation: floatIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes floatIn {
+      from { opacity: 0; transform: translateY(24px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .badge-quest {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 155, 72, 0.2);
+      border: 1px solid rgba(0, 155, 72, 0.5);
+      color: #34d399;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+    }
+
+    h1.game-title {
+      font-size: 2.2rem;
+      font-weight: 900;
+      line-height: 1.15;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #ffffff 30%, #fcd116 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 4px 20px rgba(252, 209, 22, 0.3);
+    }
+
+    p.subtitle {
+      color: #94a3b8;
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 28px;
+      text-align: left;
+    }
+
+    .control-item {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .control-item strong {
+      display: block;
+      color: #f8fafc;
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+    }
+
+    .control-item span {
+      color: #94a3b8;
+      font-size: 0.78rem;
+      line-height: 1.3;
+      display: block;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn-vr {
+      background: linear-gradient(135deg, #e52521 0%, #b31411 100%);
+      color: #ffffff;
+      border: none;
+      outline: none;
+      padding: 16px 28px;
+      border-radius: 16px;
+      font-size: 1.1rem;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(229, 37, 33, 0.45);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .btn-vr:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(229, 37, 33, 0.65);
+      filter: brightness(1.1);
+    }
+
+    .btn-desktop {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #e2e8f0;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-desktop:hover {
+      background: rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+    }
+
+    /* Reticle / Crosshair para modo PC */
+    #reticle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 8px;
+      height: 8px;
+      transform: translate(-50%, -50%);
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 5;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="webgl-canvas"></canvas>
+  <div id="damage-overlay"></div>
+  <div id="reticle"></div>
+
+  <!-- HUD 2D para Vista de Espejo / Escritorio -->
+  <div id="desktop-hud">
+    <div class="hud-metric">
+      <span>VIDA:</span>
+      <span id="hud-hearts" class="hud-hearts">❤️❤️❤️</span>
+    </div>
+    <div class="hud-metric">
+      <span>MONEDAS:</span>
+      <span id="hud-coins" class="hud-coins">🪙 00</span>
+    </div>
+    <div class="hud-metric">
+      <span>PUNTOS:</span>
+      <span id="hud-score" class="hud-score">00000</span>
+    </div>
+  </div>
+
+  <!-- Launcher / Portada -->
+  <div id="launcher-ui">
+    <div class="launcher-card">
+      <div class="badge-quest">⚡ Meta Quest 3 / 3S WebXR Nativo</div>
+      <h1 class="game-title">SUPER MARIO VR</h1>
+      <p class="subtitle">Experiencia 3D Inmersiva en Primera Persona & Locomoción 6DoF</p>
+
+      <div class="controls-grid">
+        <div class="control-item">
+          <strong>🕹️ Stick Izquierdo Touch</strong>
+          <span>Locomoción continua relativa a la vista (XZ)</span>
+        </div>
+        <div class="control-item">
+          <strong>🔄 Stick Derecho Touch</strong>
+          <span>Snap Turn (Giro 45° anti-mareo)</span>
+        </div>
+        <div class="control-item">
+          <strong>🅰️ Botón A / Gatillo / Grip</strong>
+          <span>Salto y propulsión vertical</span>
+        </div>
+        <div class="control-item">
+          <strong>🥊 Guantes de Fontanero 6DoF</strong>
+          <span>Golpea bloques '?' y aplasta Goombas</span>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button id="btn-enter-vr" class="btn-vr">
+          <span>🥽</span> ENTRAR EN REALIDAD VIRTUAL (QUEST)
+        </button>
+        <button id="btn-play-desktop" class="btn-desktop">
+          💻 Jugar en PC / Pantalla 2D (WASD + Ratón + Espacio)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js Library -->
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+    // =========================================================================
+    // 1. GENERADOR PROCEDURAL DE TEXTURAS PBR (Canvas API - Cero dependencias externas)
+    // =========================================================================
+    const TextureGenerator = {
+      // Ladrillo rústico desgastado con relieves y marcas de tiempo
+      createBrickTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Base terracota profunda
+        ctx.fillStyle = '#6a2212';
+        ctx.fillRect(0, 0, 512, 512);
+
+        const rows = 8;
+        const cols = 4;
+        const brickH = 512 / rows;
+        const brickW = 512 / cols;
+
+        for (let r = 0; r < rows; r++) {
+          const isOffset = r % 2 === 1;
+          const startX = isOffset ? -brickW / 2 : 0;
+          for (let x = startX; x < 512 + brickW; x += brickW) {
+            // Variación de color entre ladrillos
+            const hueShift = (Math.random() - 0.5) * 15;
+            const rCol = Math.min(255, Math.max(100, 160 + hueShift));
+            const gCol = Math.min(255, Math.max(30, 55 + hueShift * 0.5));
+            const bCol = Math.min(255, Math.max(20, 35 + hueShift * 0.3));
+            
+            ctx.fillStyle = `rgb(${Math.floor(rCol)}, ${Math.floor(gCol)}, ${Math.floor(bCol)})`;
+            ctx.fillRect(x + 4, r * brickH + 4, brickW - 8, brickH - 8);
+
+            // Textura rugosa / grano de arcilla
+            for (let i = 0; i < 40; i++) {
+              ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.08)';
+              const px = x + 4 + Math.random() * (brickW - 8);
+              const py = r * brickH + 4 + Math.random() * (brickH - 8);
+              ctx.fillRect(px, py, 2 + Math.random() * 3, 2 + Math.random() * 3);
+            }
+
+            // Sombra interior de bisel
+            ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x + 5, r * brickH + 5, brickW - 10, brickH - 10);
+          }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      },
+
+      // Bloque interrogación dorado metálico con remaches y relieve
+      createQuestionBlockTexture(isHit = false) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        if (!isHit) {
+          // Fondo metálico dorado reflectante
+          const grad = ctx.createLinearGradient(0, 0, 512, 512);
+          grad.addColorStop(0, '#ffe04d');
+          grad.addColorStop(0.5, '#f59e0b');
+          grad.addColorStop(1, '#b45309');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, 512, 512);
+
+          // Marco metálico reforzado
+          ctx.strokeStyle = '#78350f';
+          ctx.lineWidth = 28;
+          ctx.strokeRect(14, 14, 484, 484);
+
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 10;
+          ctx.strokeRect(28, 28, 456, 456);
+
+          // Remaches esquineros de acero forjado
+          const rivets = [[50, 50], [462, 50], [50, 462], [462, 462]];
+          rivets.forEach(([rx, ry]) => {
+            ctx.fillStyle = '#451a03';
+            ctx.beginPath();
+            ctx.arc(rx, ry, 18, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#fde68a';
+            ctx.beginPath();
+            ctx.arc(rx - 3, ry - 3, 10, 0, Math.PI * 2);
+            ctx.fill();
+          });
+
+          // Signo de interrogación grabado y brillante
+          ctx.font = '900 320px "Arial Black", Impact, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          // Sombra profunda
+          ctx.fillStyle = 'rgba(69, 26, 3, 0.75)';
+          ctx.fillText('?', 262, 266);
+
+          // Relleno brillante
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText('?', 256, 252);
+        } else {
+          // Bloque agotado / vacío (Bronce oscuro desgastado)
+          ctx.fillStyle = '#4a3b32';
+          ctx.fillRect(0, 0, 512, 512);
+
+          ctx.strokeStyle = '#271e18';
+          ctx.lineWidth = 24;
+          ctx.strokeRect(12, 12, 488, 488);
+
+          ctx.strokeStyle = '#6e5d52';
+          ctx.lineWidth = 8;
+          ctx.strokeRect(26, 26, 460, 460);
+
+          // Puntos centrales vacíos
+          const rivets = [[50, 50], [462, 50], [50, 462], [462, 462], [256, 256]];
+          rivets.forEach(([rx, ry]) => {
+            ctx.fillStyle = '#1c1510';
+            ctx.beginPath();
+            ctx.arc(rx, ry, 16, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      },
+
+      // Tubería de hierro forjado verde industrial con óxido sutil
+      createPipeTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Verde bosque metalizado
+        const grad = ctx.createLinearGradient(0, 0, 512, 0);
+        grad.addColorStop(0, '#004720');
+        grad.addColorStop(0.2, '#008f43');
+        grad.addColorStop(0.5, '#05c460');
+        grad.addColorStop(0.8, '#008f43');
+        grad.addColorStop(1, '#003316');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Estrías metálicas verticales
+        for (let x = 0; x < 512; x += 8) {
+          ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.1)';
+          ctx.fillRect(x, 0, 3, 512);
+        }
+
+        // Marcas de óxido y desgaste
+        for (let i = 0; i < 20; i++) {
+          ctx.fillStyle = 'rgba(92, 48, 16, 0.25)';
+          const ox = Math.random() * 512;
+          const oy = Math.random() * 512;
+          ctx.beginPath();
+          ctx.arc(ox, oy, 12 + Math.random() * 20, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      },
+
+      // Textura de suelo (empedrado rústico y vegetación)
+      createGroundTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 1024;
+        const ctx = canvas.getContext('2d');
+
+        // Tierra fértil base
+        ctx.fillStyle = '#2d1e12';
+        ctx.fillRect(0, 0, 1024, 1024);
+
+        // Adoquines rústicos
+        const tileSize = 64;
+        for (let y = 0; y < 1024; y += tileSize) {
+          for (let x = 0; x < 1024; x += tileSize) {
+            const stoneLum = 50 + Math.random() * 40;
+            ctx.fillStyle = `rgb(${stoneLum + 15}, ${stoneLum + 8}, ${stoneLum})`;
+            ctx.beginPath();
+            ctx.roundRect(x + 4, y + 4, tileSize - 8, tileSize - 8, 8);
+            ctx.fill();
+
+            // Manchas de musgo verde en las juntas
+            if (Math.random() > 0.4) {
+              ctx.fillStyle = 'rgba(34, 110, 48, 0.45)';
+              ctx.fillRect(x, y, tileSize, 8);
+              ctx.fillRect(x, y, 8, tileSize);
+            }
+          }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(16, 16);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      },
+
+      // Piel orgánica de Goomba (sombrero fungi con ojos y dientes feroces)
+      createGoombaFaceTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Color castaño oscuro / marrón seta
+        ctx.fillStyle = '#5c2c16';
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Líneas orgánicas radiales de sombrero
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 4;
+        for (let i = 0; i < 512; i += 32) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(256, 256);
+          ctx.stroke();
+        }
+
+        // Ojos fieros angulares
+        const drawEye = (centerX) => {
+          ctx.save();
+          ctx.translate(centerX, 270);
+
+          // Fondo blanco esclerótica angular
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.moveTo(-40, 25);
+          ctx.lineTo(0, -35);
+          ctx.lineTo(40, 25);
+          ctx.closePath();
+          ctx.fill();
+
+          // Pupila oscura vertical felina
+          ctx.fillStyle = '#111827';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 14, 26, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Ceño fruncido amenazante
+          ctx.strokeStyle = '#270e04';
+          ctx.lineWidth = 14;
+          ctx.beginPath();
+          ctx.moveTo(-45, -30);
+          ctx.lineTo(45, -15);
+          ctx.stroke();
+
+          ctx.restore();
+        };
+
+        drawEye(170);
+        drawEye(342);
+
+        // Colmillos afilados inferiores
+        ctx.fillStyle = '#fffbeb';
+        ctx.beginPath();
+        ctx.moveTo(180, 420);
+        ctx.lineTo(200, 360);
+        ctx.lineTo(220, 420);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(292, 420);
+        ctx.lineTo(312, 360);
+        ctx.lineTo(332, 420);
+        ctx.fill();
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      },
+
+      // Piel roja carnívora de planta piraña con manchas blancas
+      createPiranhaTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Rojo carmesí intenso
+        ctx.fillStyle = '#d90429';
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Lunares blancos orgánicos
+        ctx.fillStyle = '#ffffff';
+        const spots = [
+          [128, 128, 48], [384, 128, 52], [256, 256, 60],
+          [100, 384, 44], [400, 390, 46], [256, 80, 38],
+          [60, 240, 34], [450, 240, 36]
+        ];
+
+        spots.forEach(([x, y, r]) => {
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+          ctx.lineWidth = 4;
+          ctx.stroke();
+        });
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      },
+
+      // Mampostería de piedra gris para el castillo de Bowser / Fortaleza final
+      createCastleTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#1f2937';
+        ctx.fillRect(0, 0, 512, 512);
+
+        const rows = 6;
+        const cols = 4;
+        const h = 512 / rows;
+        const w = 512 / cols;
+
+        for (let r = 0; r < rows; r++) {
+          const off = (r % 2) * (w / 2);
+          for (let c = -1; c <= cols + 1; c++) {
+            const x = c * w + off;
+            const y = r * h;
+
+            const tone = 70 + Math.random() * 30;
+            ctx.fillStyle = `rgb(${tone}, ${tone + 4}, ${tone + 10})`;
+            ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+          }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      }
+    };
+
+    // =========================================================================
+    // 2. SINTETIZADOR DE AUDIO PROCEDURAL NATIVO (Web Audio API)
+    // =========================================================================
+    class RetroSoundFX {
+      constructor() {
+        this.ctx = null;
+        this.isReady = false;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContextClass();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+        this.isReady = true;
+      }
+
+      // Sonido de Salto (Frecuencia en barrido ascendente clásico)
+      playJump() {
+        if (!this.isReady) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(140, t);
+        osc.frequency.exponentialRampToValueAtTime(580, t + 0.16);
+
+        gain.gain.setValueAtTime(0.18, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(t);
+        osc.stop(t + 0.18);
+      }
+
+      // Sonido de Moneda Recogida (Dos tonos armónicos en campana brillante B5 -> E6)
+      playCoin() {
+        if (!this.isReady) return;
+        const t = this.ctx.currentTime;
+
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc1.type = 'sine';
+        osc2.type = 'triangle';
+
+        // Tono 1: B5 (987.77 Hz)
+        osc1.frequency.setValueAtTime(987.77, t);
+        osc2.frequency.setValueAtTime(987.77 * 2, t);
+        
+        // Tono 2: E6 (1318.51 Hz)
+        osc1.frequency.setValueAtTime(1318.51, t + 0.08);
+        osc2.frequency.setValueAtTime(1318.51 * 2, t + 0.08);
+
+        gain.gain.setValueAtTime(0.25, t);
+        gain.gain.setValueAtTime(0.25, t + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc1.start(t);
+        osc2.start(t);
+        osc1.stop(t + 0.45);
+        osc2.stop(t + 0.45);
+      }
+
+      // Golpe en bloque interrogante (Impacto seco con resonancia metálica)
+      playBlockHit() {
+        if (!this.isReady) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(260, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.12);
+
+        gain.gain.setValueAtTime(0.3, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(t);
+        osc.stop(t + 0.12);
+      }
+
+      // Aplastar Goomba (Squish/Crunch de impacto orgánico)
+      playStomp() {
+        if (!this.isReady) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(380, t);
+        osc.frequency.exponentialRampToValueAtTime(90, t + 0.18);
+
+        gain.gain.setValueAtTime(0.35, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(t);
+        osc.stop(t + 0.18);
+      }
+
+      // Daño al jugador (Zumbido tenso y percusivo)
+      playHurt() {
+        if (!this.isReady) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160, t);
+        osc.frequency.setValueAtTime(90, t + 0.1);
+        osc.frequency.setValueAtTime(50, t + 0.2);
+
+        gain.gain.setValueAtTime(0.4, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(t);
+        osc.stop(t + 0.35);
+      }
+
+      // Mordisco de Planta Piraña (Ruido de corte rápido)
+      playPiranhaChomp() {
+        if (!this.isReady) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(450, t);
+        osc.frequency.exponentialRampToValueAtTime(120, t + 0.09);
+
+        gain.gain.setValueAtTime(0.28, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(t);
+        osc.stop(t + 0.09);
+      }
+
+      // Fanfarria de Victoria (Llegada al mástil y Castillo)
+      playVictory() {
+        if (!this.isReady) return;
+        const notes = [
+          { f: 523.25, d: 0.12 }, // C5
+          { f: 659.25, d: 0.12 }, // E5
+          { f: 783.99, d: 0.12 }, // G5
+          { f: 1046.50, d: 0.25 }, // C6
+          { f: 880.00, d: 0.14 }, // A5
+          { f: 1046.50, d: 0.6 } // C6 sostenido
+        ];
+
+        let cursorTime = this.ctx.currentTime;
+        notes.forEach(({ f, d }) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(f, cursorTime);
+
+          gain.gain.setValueAtTime(0.3, cursorTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, cursorTime + d);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(cursorTime);
+          osc.stop(cursorTime + d);
+
+          cursorTime += d + 0.03;
+        });
+      }
+    }
+
+    const soundFX = new RetroSoundFX();
+
+    // =========================================================================
+    // 3. INICIALIZACIÓN THREE.JS & MOTOR DE RENDERIZADO
+    // =========================================================================
+    const canvas = document.getElementById('webgl-canvas');
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: 'high-performance'
+    });
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.xr.enabled = true;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x6aa5e5); // Cielo diurno vibrante de Mario
+    scene.fog = new THREE.FogExp2(0x6aa5e5, 0.012);
+
+    // =========================================================================
+    // 4. JERARQUÍA DEL XR RIG (DOLLY ARCHITECTURE - CRÍTICO PARA QUEST)
+    // =========================================================================
+    // cameraRig actúa como el 'Dolly' espacial sobre el cual se aplican traslaciones
+    // y físicas globales sin perturbar el tracking 6DoF de la cabeza en camera.
+    const cameraRig = new THREE.Group();
+    cameraRig.name = 'cameraRig';
+    scene.add(cameraRig);
+
+    // Posición inicial de spawn del fontanero
+    cameraRig.position.set(0, 0, 8);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
+    camera.position.set(0, 1.65, 0); // Altura de ojos promedio para modo Desktop
+    cameraRig.add(camera);
+
+    // Mandos WebXR Touch
+    const controllerLeft = renderer.xr.getController(0);
+    const controllerRight = renderer.xr.getController(1);
+    cameraRig.add(controllerLeft);
+    cameraRig.add(controllerRight);
+
+    const controllerGripLeft = renderer.xr.getControllerGrip(0);
+    const controllerGripRight = renderer.xr.getControllerGrip(1);
+    cameraRig.add(controllerGripLeft);
+    cameraRig.add(controllerGripRight);
+
+    // =========================================================================
+    // 5. MODELADO 3D DE LOS GUANTES DE FONTANERO (MANOS VIRTUALES 6DoF)
+    // =========================================================================
+    function createPlumberGlove(isRightHand = false) {
+      const gloveGroup = new THREE.Group();
+
+      const gloveMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.5,
+        metalness: 0.05
+      });
+
+      const cuffMat = new THREE.MeshStandardMaterial({
+        color: 0xe0e0e0,
+        roughness: 0.6
+      });
+
+      // Muñequera acolchada
+      const cuffGeo = new THREE.CylinderGeometry(0.048, 0.052, 0.04, 16);
+      cuffGeo.rotateX(Math.PI / 2);
+      const cuff = new THREE.Mesh(cuffGeo, cuffMat);
+      cuff.position.set(0, 0, 0.05);
+      gloveGroup.add(cuff);
+
+      // Palma del guante
+      const palmGeo = new THREE.BoxGeometry(0.075, 0.038, 0.08);
+      const palm = new THREE.Mesh(palmGeo, gloveMat);
+      palm.castShadow = true;
+      gloveGroup.add(palm);
+
+      // 3 costuras decorativas clásicas en el dorso de la mano
+      for (let i = -1; i <= 1; i++) {
+        const stitchGeo = new THREE.CylinderGeometry(0.0018, 0.0018, 0.045, 8);
+        stitchGeo.rotateX(Math.PI / 2);
+        const stitch = new THREE.Mesh(stitchGeo, new THREE.MeshBasicMaterial({ color: 0x94a3b8 }));
+        stitch.position.set(i * 0.016, 0.02, -0.01);
+        gloveGroup.add(stitch);
+      }
+
+      // Dedos semi-flexionados
+      const fingerGeo = new THREE.CapsuleGeometry(0.009, 0.035, 8, 8);
+      fingerGeo.rotateX(Math.PI / 4);
+
+      for (let f = 0; f < 4; f++) {
+        const finger = new THREE.Mesh(fingerGeo, gloveMat);
+        finger.position.set(-0.026 + f * 0.018, -0.005, -0.055);
+        finger.castShadow = true;
+        gloveGroup.add(finger);
+      }
+
+      // Pulgar ergonómico en orientación correcta
+      const thumbGeo = new THREE.CapsuleGeometry(0.01, 0.032, 8, 8);
+      thumbGeo.rotateZ(isRightHand ? -Math.PI / 3 : Math.PI / 3);
+      const thumb = new THREE.Mesh(thumbGeo, gloveMat);
+      thumb.position.set(isRightHand ? -0.045 : 0.045, 0.005, -0.02);
+      thumb.castShadow = true;
+      gloveGroup.add(thumb);
+
+      gloveGroup.scale.set(1.2, 1.2, 1.2);
+      return gloveGroup;
+    }
+
+    const gloveLeft = createPlumberGlove(false);
+    const gloveRight = createPlumberGlove(true);
+    controllerLeft.add(gloveLeft);
+    controllerRight.add(gloveRight);
+
+    // =========================================================================
+    // 6. HUD HOLOGRÁFICO EN LA MUÑECA IZQUIERDA (DIEGÉTICO EN VR)
+    // =========================================================================
+    const wristHudCanvas = document.createElement('canvas');
+    wristHudCanvas.width = 512;
+    wristHudCanvas.height = 256;
+    const wristHudCtx = wristHudCanvas.getContext('2d');
+
+    const wristHudTexture = new THREE.CanvasTexture(wristHudCanvas);
+    const wristHudMat = new THREE.MeshBasicMaterial({
+      map: wristHudTexture,
+      transparent: true,
+      side: THREE.DoubleSide
+    });
+
+    const wristHudGeo = new THREE.PlaneGeometry(0.14, 0.07);
+    const wristHudMesh = new THREE.Mesh(wristHudGeo, wristHudMat);
+    wristHudMesh.position.set(0, 0.07, 0.02);
+    wristHudMesh.rotation.x = -Math.PI / 2.5;
+    gloveLeft.add(wristHudMesh);
+
+    // =========================================================================
+    // 7. ILUMINACIÓN PBR Y ATMÓSFERA
+    // =========================================================================
+    const hemiLight = new THREE.HemisphereLight(0xbbe1fa, 0x473e35, 1.1);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfffaed, 2.2);
+    sunLight.position.set(30, 45, 25);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 140;
+    sunLight.shadow.camera.left = -30;
+    sunLight.shadow.camera.right = 30;
+    sunLight.shadow.camera.top = 30;
+    sunLight.shadow.camera.bottom = -30;
+    sunLight.shadow.bias = -0.0004;
+    scene.add(sunLight);
+
+    // =========================================================================
+    // 8. ESCENARIO PROCEDURAL, PLATAFORMAS Y ENTIDADES
+    // =========================================================================
+    const brickTex = TextureGenerator.createBrickTexture();
+    const qBlockTex = TextureGenerator.createQuestionBlockTexture(false);
+    const qBlockHitTex = TextureGenerator.createQuestionBlockTexture(true);
+    const pipeTex = TextureGenerator.createPipeTexture();
+    const groundTex = TextureGenerator.createGroundTexture();
+    const goombaFaceTex = TextureGenerator.createGoombaFaceTexture();
+    const piranhaTex = TextureGenerator.createPiranhaTexture();
+    const castleTex = TextureGenerator.createCastleTexture();
+
+    const brickMaterial = new THREE.MeshStandardMaterial({
+      map: brickTex,
+      roughness: 0.8,
+      metalness: 0.1
+    });
+
+    const qBlockMaterial = new THREE.MeshStandardMaterial({
+      map: qBlockTex,
+      roughness: 0.25,
+      metalness: 0.85
+    });
+
+    const qBlockHitMaterial = new THREE.MeshStandardMaterial({
+      map: qBlockHitTex,
+      roughness: 0.7,
+      metalness: 0.4
+    });
+
+    const pipeMaterial = new THREE.MeshStandardMaterial({
+      map: pipeTex,
+      roughness: 0.35,
+      metalness: 0.7
+    });
+
+    // Suelo infinito
+    const groundGeo = new THREE.PlaneGeometry(80, 240);
+    const groundMat = new THREE.MeshStandardMaterial({
+      map: groundTex,
+      roughness: 0.85,
+      metalness: 0.1
+    });
+    const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.set(0, 0, -50);
+    groundMesh.receiveShadow = true;
+    scene.add(groundMesh);
+
+    // Montañas y colinas distantes
+    for (let i = 0; i < 14; i++) {
+      const hillRadius = 14 + Math.random() * 20;
+      const hillGeo = new THREE.SphereGeometry(hillRadius, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+      const hillMat = new THREE.MeshStandardMaterial({
+        color: i % 2 === 0 ? 0x2e7d32 : 0x1b5e20,
+        roughness: 0.9
+      });
+      const hill = new THREE.Mesh(hillGeo, hillMat);
+      const signX = i % 2 === 0 ? 1 : -1;
+      hill.position.set(signX * (30 + Math.random() * 25), -2, -10 - i * 15);
+      scene.add(hill);
+    }
+
+    // Nubes flotantes estilizadas
+    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+    for (let c = 0; c < 12; c++) {
+      const cloudGroup = new THREE.Group();
+      for (let b = 0; b < 4; b++) {
+        const puff = new THREE.Mesh(new THREE.DodecahedronGeometry(2.5 + Math.random() * 1.8), cloudMat);
+        puff.position.set(b * 2.4, Math.sin(b) * 0.8, (Math.random() - 0.5) * 1.5);
+        cloudGroup.add(puff);
+      }
+      cloudGroup.position.set((Math.random() - 0.5) * 80, 22 + Math.random() * 10, -c * 18);
+      scene.add(cloudGroup);
+    }
+
+    // ARRAYS DE COLISIÓN Y ENTIDADES
+    const solidObstacles = []; // Cajas de colisión horizontal y vertical
+    const questionBlocks = []; // Bloques ?
+    const goombas = [];        // Enemigos Goomba
+    const piranhaPlants = [];  // Plantas Piraña animadas
+    const coinsInWorld = [];   // Monedas flotantes
+    const floatingEffects = [];// Partículas y monedas en ascenso
+    let flagpoleEntity = null; // Mástil y bandera de meta
+
+    // Helper: Registrar obstáculo sólido AABB
+    function registerSolid(minX, maxX, minY, maxY, minZ, maxZ, mesh = null) {
+      solidObstacles.push({ minX, maxX, minY, maxY, minZ, maxZ, mesh });
+    }
+
+    // Creador de Bloque Interrogante '?'
+    function spawnQuestionBlock(x, y, z) {
+      const geo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+      const mesh = new THREE.Mesh(geo, qBlockMaterial.clone());
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+
+      const blockData = {
+        mesh,
+        baseY: y,
+        isHit: false,
+        bounceTimer: 0,
+        x, y, z
+      };
+
+      questionBlocks.push(blockData);
+      registerSolid(x - 0.45, x + 0.45, y - 0.45, y + 0.45, z - 0.45, z + 0.45, mesh);
+      return blockData;
+    }
+
+    // Creador de Bloque de Ladrillo Destructible / Sólido
+    function spawnBrickBlock(x, y, z) {
+      const geo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+      const mesh = new THREE.Mesh(geo, brickMaterial);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      registerSolid(x - 0.45, x + 0.45, y - 0.45, y + 0.45, z - 0.45, z + 0.45, mesh);
+    }
+
+    // Creador de Tubería Realista de Fontanería con collarín
+    function spawnPipe(x, z, height = 1.8, hasPiranha = false) {
+      const pipeGroup = new THREE.Group();
+
+      // Cuerpo cilíndrico principal
+      const bodyRadius = 0.75;
+      const bodyGeo = new THREE.CylinderGeometry(bodyRadius, bodyRadius, height, 24);
+      const body = new THREE.Mesh(bodyGeo, pipeMaterial);
+      body.position.y = height / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      pipeGroup.add(body);
+
+      // Collarín / Borde superior reforzado
+      const rimRadius = 0.88;
+      const rimHeight = 0.4;
+      const rimGeo = new THREE.CylinderGeometry(rimRadius, rimRadius, rimHeight, 24);
+      const rim = new THREE.Mesh(rimGeo, pipeMaterial);
+      rim.position.y = height - rimHeight / 2;
+      rim.castShadow = true;
+      pipeGroup.add(rim);
+
+      // Hueco interior oscuro
+      const holeGeo = new THREE.CylinderGeometry(0.68, 0.68, 0.1, 24);
+      const hole = new THREE.Mesh(holeGeo, new THREE.MeshBasicMaterial({ color: 0x05140b }));
+      hole.position.y = height;
+      pipeGroup.add(hole);
+
+      pipeGroup.position.set(x, 0, z);
+      scene.add(pipeGroup);
+
+      registerSolid(x - rimRadius, x + rimRadius, 0, height, z - rimRadius, z + rimRadius, pipeGroup);
+
+      if (hasPiranha) {
+        spawnPiranhaPlant(x, height, z);
+      }
+    }
+
+    // Creador de Planta Piraña Carnívora 3D
+    function spawnPiranhaPlant(x, pipeTopY, z) {
+      const piranhaGroup = new THREE.Group();
+
+      // Tallo verde carnoso
+      const stemGeo = new THREE.CylinderGeometry(0.12, 0.15, 1.2, 12);
+      const stemMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.6 });
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.position.y = 0.6;
+      stem.castShadow = true;
+      piranhaGroup.add(stem);
+
+      // Hojas grandes laterales
+      const leafGeo = new THREE.ConeGeometry(0.22, 0.6, 6);
+      leafGeo.rotateZ(Math.PI / 3);
+      const leaf1 = new THREE.Mesh(leafGeo, stemMat);
+      leaf1.position.set(0.22, 0.4, 0);
+      piranhaGroup.add(leaf1);
+
+      const leaf2 = new THREE.Mesh(leafGeo, stemMat);
+      leaf2.position.set(-0.22, 0.4, 0);
+      leaf2.rotation.y = Math.PI;
+      piranhaGroup.add(leaf2);
+
+      // Cabeza esférica roja con textura de lunares
+      const headMat = new THREE.MeshStandardMaterial({ map: piranhaTex, roughness: 0.4 });
+      const headGeo = new THREE.SphereGeometry(0.38, 16, 16);
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.y = 1.2;
+      head.castShadow = true;
+      piranhaGroup.add(head);
+
+      // Labios blancos bulbosos
+      const lipsGeo = new THREE.TorusGeometry(0.3, 0.08, 12, 24);
+      lipsGeo.rotateX(Math.PI / 2);
+      const lipsMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+      const lips = new THREE.Mesh(lipsGeo, lipsMat);
+      lips.position.set(0, 1.18, 0.22);
+      piranhaGroup.add(lips);
+
+      // Dientes cónicos afilados
+      for (let t = 0; t < 6; t++) {
+        const toothGeo = new THREE.ConeGeometry(0.04, 0.1, 6);
+        const tooth = new THREE.Mesh(toothGeo, lipsMat);
+        const angle = (t / 6) * Math.PI * 2;
+        tooth.position.set(Math.cos(angle) * 0.22, 1.18 + (t < 3 ? 0.08 : -0.08), 0.22);
+        tooth.rotation.x = t < 3 ? Math.PI : 0;
+        piranhaGroup.add(tooth);
+      }
+
+      piranhaGroup.position.set(x, pipeTopY - 1.2, z);
+      scene.add(piranhaGroup);
+
+      piranhaPlants.push({
+        group: piranhaGroup,
+        baseY: pipeTopY - 1.2,
+        peakY: pipeTopY - 0.2,
+        currentY: pipeTopY - 1.2,
+        state: 'hidden',
+        timer: Math.random() * 2,
+        x, z
+      });
+    }
+
+    // Creador de Goomba Realista 3D
+    function spawnGoomba(x, z, patrolRange = 3.5) {
+      const goombaGroup = new THREE.Group();
+
+      // Sombrero Fúngico
+      const capGeo = new THREE.SphereGeometry(0.48, 18, 14, 0, Math.PI * 2, 0, Math.PI / 1.7);
+      const capMat = new THREE.MeshStandardMaterial({
+        map: goombaFaceTex,
+        roughness: 0.7,
+        metalness: 0.1
+      });
+      const cap = new THREE.Mesh(capGeo, capMat);
+      cap.rotation.x = Math.PI;
+      cap.position.y = 0.52;
+      cap.castShadow = true;
+      goombaGroup.add(cap);
+
+      // Cuerpo / Tallo base
+      const bodyGeo = new THREE.CylinderGeometry(0.25, 0.32, 0.32, 14);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0xfde047, roughness: 0.8 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.24;
+      body.castShadow = true;
+      goombaGroup.add(body);
+
+      // Pies oscuros para la marcha
+      const footGeo = new THREE.SphereGeometry(0.14, 10, 8);
+      footGeo.scale(1.2, 0.7, 1.8);
+      const footMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.9 });
+
+      const footL = new THREE.Mesh(footGeo, footMat);
+      footL.position.set(-0.18, 0.08, 0);
+      goombaGroup.add(footL);
+
+      const footR = new THREE.Mesh(footGeo, footMat);
+      footR.position.set(0.18, 0.08, 0);
+      goombaGroup.add(footR);
+
+      goombaGroup.position.set(x, 0, z);
+      scene.add(goombaGroup);
+
+      goombas.push({
+        group: goombaGroup,
+        footL,
+        footR,
+        startX: x,
+        startZ: z,
+        minZ: z - patrolRange,
+        maxZ: z + patrolRange,
+        dirZ: -1,
+        speed: 1.3,
+        isSquashed: false,
+        squashTimer: 0,
+        walkAnim: 0
+      });
+    }
+
+    // Creador de Moneda Dorada 3D en el mundo
+    function spawnWorldCoin(x, y, z) {
+      const coinGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.06, 20);
+      coinGeo.rotateX(Math.PI / 2);
+      const coinMat = new THREE.MeshStandardMaterial({
+        color: 0xfcd116,
+        roughness: 0.2,
+        metalness: 0.9
+      });
+      const coin = new THREE.Mesh(coinGeo, coinMat);
+      coin.position.set(x, y, z);
+      coin.castShadow = true;
+      scene.add(coin);
+
+      coinsInWorld.push({
+        mesh: coin,
+        collected: false,
+        x, y, z,
+        spinSpeed: 2.5 + Math.random()
+      });
+    }
+
+    // Creador del Mástil, Bandera y Fortaleza Final
+    function spawnFinishCastle(z = -75) {
+      const finishGroup = new THREE.Group();
+
+      // Mástil de acero
+      const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, 10, 16);
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.9, roughness: 0.2 });
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.set(0, 5, z);
+      pole.castShadow = true;
+      finishGroup.add(pole);
+
+      // Estrella dorada en la cima
+      const starGeo = new THREE.OctahedronGeometry(0.45);
+      const starMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xca8a04, roughness: 0.1 });
+      const star = new THREE.Mesh(starGeo, starMat);
+      star.position.set(0, 10.2, z);
+      finishGroup.add(star);
+
+      // Bandera deslizante
+      const flagGeo = new THREE.PlaneGeometry(1.4, 0.9);
+      const flagMat = new THREE.MeshStandardMaterial({
+        color: 0x16a34a,
+        roughness: 0.5,
+        side: THREE.DoubleSide
+      });
+      const flag = new THREE.Mesh(flagGeo, flagMat);
+      flag.position.set(0.72, 9.4, z);
+      finishGroup.add(flag);
+
+      // Pedestal de base
+      const baseGeo = new THREE.BoxGeometry(2, 0.6, 2);
+      const baseMesh = new THREE.Mesh(baseGeo, brickMaterial);
+      baseMesh.position.set(0, 0.3, z);
+      finishGroup.add(baseMesh);
+
+      // Castillo de Piedra al fondo
+      const castleGroup = new THREE.Group();
+      const castleMat = new THREE.MeshStandardMaterial({ map: castleTex, roughness: 0.8 });
+
+      // Torre central
+      const keepGeo = new THREE.BoxGeometry(8, 7, 6);
+      const keep = new THREE.Mesh(keepGeo, castleMat);
+      keep.position.set(0, 3.5, z - 10);
+      keep.castShadow = true;
+      castleGroup.add(keep);
+
+      // Puerta arqueada oscura
+      const doorGeo = new THREE.CylinderGeometry(1.2, 1.2, 3, 16, 1, false, 0, Math.PI);
+      doorGeo.rotateX(Math.PI / 2);
+      const door = new THREE.Mesh(doorGeo, new THREE.MeshBasicMaterial({ color: 0x050505 }));
+      door.position.set(0, 1.5, z - 6.95);
+      castleGroup.add(door);
+
+      // Torres laterales con almenas
+      [-5.5, 5.5].forEach(tx => {
+        const towerGeo = new THREE.CylinderGeometry(1.8, 1.8, 9, 16);
+        const tower = new THREE.Mesh(towerGeo, castleMat);
+        tower.position.set(tx, 4.5, z - 9);
+        tower.castShadow = true;
+        castleGroup.add(tower);
+      });
+
+      finishGroup.add(castleGroup);
+      scene.add(finishGroup);
+
+      flagpoleEntity = {
+        polePos: new THREE.Vector3(0, 0, z),
+        flagMesh: flag,
+        flagY: 9.4,
+        isTriggered: false,
+        starMesh: star
+      };
+
+      registerSolid(-1, 1, 0, 0.6, z - 1, z + 1);
+    }
+
+    // =========================================================================
+    // 9. CONSTRUCCIÓN DEL NIVEL (WORLD 1-1 EN VR)
+    // =========================================================================
+    // Bloques iniciales icónicos
+    spawnQuestionBlock(0, 2.3, 2);
+    spawnBrickBlock(-1.2, 2.3, 2);
+    spawnQuestionBlock(-2.4, 2.3, 2);
+    spawnBrickBlock(1.2, 2.3, 2);
+    spawnQuestionBlock(2.4, 2.3, 2);
+
+    // Primer Goomba patrullero
+    spawnGoomba(0, -2, 3.5);
+
+    // Zona de Tuberías
+    spawnPipe(3.5, -8, 1.5, false);
+    spawnPipe(-3.5, -15, 2.2, true); // Piranha plant activa
+    spawnPipe(3.5, -23, 2.8, true);
+
+    // Segundo Goomba
+    spawnGoomba(-0.8, -18, 4.0);
+
+    // Plataforma elevada de ladrillos flotantes con monedas
+    for (let i = -3; i <= 3; i++) {
+      spawnBrickBlock(i * 1.0, 3.8, -32);
+      if (Math.abs(i) === 2 || i === 0) {
+        spawnQuestionBlock(i * 1.0, 3.8, -32);
+      }
+      spawnWorldCoin(i * 1.0, 4.8, -32);
+    }
+
+    // Monedas flotantes en arco sobre el suelo
+    [-5, -6.5, -8, -26, -28, -30].forEach(z => {
+      spawnWorldCoin(0, 1.5, z);
+    });
+
+    // Enemigos en la recta final
+    spawnGoomba(1.2, -40, 4.5);
+    spawnGoomba(-1.2, -45, 5.0);
+
+    // Tubería final antes de la meta
+    spawnPipe(-3.0, -52, 2.0, true);
+    spawnPipe(3.0, -56, 1.6, false);
+
+    // Mástil y Castillo Final
+    spawnFinishCastle(-70);
+
+    // =========================================================================
+    // 10. ESTADO DEL JUGADOR, FÍSICAS Y MECÁNICAS DE JUEGO
+    // =========================================================================
+    const player = {
+      hearts: 3,
+      coins: 0,
+      score: 0,
+      velocityY: 0,
+      isGrounded: false,
+      isInvulnerable: false,
+      invulnerableTimer: 0,
+      isGameOver: false,
+      isVictory: false,
+      // Desktop controls
+      moveForward: false,
+      moveBackward: false,
+      moveLeft: false,
+      moveRight: false,
+      canJump: false
+    };
+
+    // Cooldown de Snap Turn en mando derecho para evitar mareo cinetósico
+    let snapTurnReady = true;
+
+    // Vectores reutilizables para optimización en bucle de render (Cero garbage collection)
+    const _tempVec3 = new THREE.Vector3();
+    const _camDirection = new THREE.Vector3();
+    const _camRight = new THREE.Vector3();
+    const _handLPos = new THREE.Vector3();
+    const _handRPos = new THREE.Vector3();
+    const _playerHeadPos = new THREE.Vector3();
+
+    // Actualizar HUD Holográfico de muñeca y 2D
+    function updateHUD() {
+      // 2D HUD
+      let heartStr = '';
+      for (let h = 0; h < player.hearts; h++) heartStr += '❤️';
+      for (let e = player.hearts; e < 3; e++) heartStr += '🖤';
+      document.getElementById('hud-hearts').textContent = heartStr;
+      document.getElementById('hud-coins').textContent = `🪙 ${String(player.coins).padStart(2, '0')}`;
+      document.getElementById('hud-score').textContent = String(player.score).padStart(5, '0');
+
+      // 3D Wrist Canvas
+      wristHudCtx.clearRect(0, 0, 512, 256);
+
+      // Fondo HUD holográfico translúcido
+      wristHudCtx.fillStyle = 'rgba(10, 15, 30, 0.85)';
+      wristHudCtx.roundRect(10, 10, 492, 236, 24);
+      wristHudCtx.fill();
+
+      wristHudCtx.strokeStyle = 'rgba(0, 155, 72, 0.8)';
+      wristHudCtx.lineWidth = 6;
+      wristHudCtx.roundRect(10, 10, 492, 236, 24);
+      wristHudCtx.stroke();
+
+      // Corazones
+      wristHudCtx.font = 'bold 44px Arial';
+      wristHudCtx.fillText(heartStr, 35, 75);
+
+      // Monedas
+      wristHudCtx.fillStyle = '#fcd116';
+      wristHudCtx.font = 'bold 38px Arial';
+      wristHudCtx.fillText(`🪙 ${String(player.coins).padStart(2, '0')}`, 35, 145);
+
+      // Puntuación y Distancia
+      wristHudCtx.fillStyle = '#38bdf8';
+      wristHudCtx.font = 'bold 34px Arial';
+      const distToGoal = Math.max(0, Math.floor(Math.abs(cameraRig.position.z - (-70))));
+      wristHudCtx.fillText(`META: ${distToGoal}m | PTS: ${player.score}`, 35, 205);
+
+      wristHudTexture.needsUpdate = true;
+    }
+
+    updateHUD();
+
+    // Efecto visual y de audio al recibir daño
+    function damagePlayer() {
+      if (player.isInvulnerable || player.isGameOver) return;
+
+      player.hearts--;
+      player.isInvulnerable = true;
+      player.invulnerableTimer = 1.8;
+      soundFX.playHurt();
+
+      // Flash de daño en pantalla
+      const overlay = document.getElementById('damage-overlay');
+      overlay.style.opacity = '1';
+      setTimeout(() => { overlay.style.opacity = '0'; }, 180);
+
+      // Vibración háptica en mandos Quest Touch
+      const session = renderer.xr.getSession();
+      if (session) {
+        for (const source of session.inputSources) {
+          if (source.gamepad && source.gamepad.hapticActuators && source.gamepad.hapticActuators[0]) {
+            source.gamepad.hapticActuators[0].pulse(0.85, 250);
+          }
+        }
+      }
+
+      updateHUD();
+
+      if (player.hearts <= 0) {
+        triggerGameOver();
+      }
+    }
+
+    function triggerGameOver() {
+      player.isGameOver = true;
+      // Respawn tras breve retraso
+      setTimeout(() => {
+        cameraRig.position.set(0, 0, 8);
+        player.velocityY = 0;
+        player.hearts = 3;
+        player.isGameOver = false;
+        player.isInvulnerable = false;
+        updateHUD();
+      }, 2500);
+    }
+
+    // Efecto de moneda recolectada en bloque interrogante
+    function triggerQuestionBlock(block) {
+      if (block.isHit) return;
+
+      block.isHit = true;
+      block.bounceTimer = 0.25;
+      block.mesh.material = qBlockHitMaterial;
+
+      player.coins++;
+      player.score += 200;
+      soundFX.playBlockHit();
+      soundFX.playCoin();
+      updateHUD();
+
+      // Háptica en Quest
+      const session = renderer.xr.getSession();
+      if (session) {
+        for (const source of session.inputSources) {
+          if (source.gamepad && source.gamepad.hapticActuators && source.gamepad.hapticActuators[0]) {
+            source.gamepad.hapticActuators[0].pulse(0.6, 120);
+          }
+        }
+      }
+
+      // Spawn de moneda animada flotante
+      const coinGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.05, 16);
+      coinGeo.rotateX(Math.PI / 2);
+      const coinMesh = new THREE.Mesh(coinGeo, new THREE.MeshStandardMaterial({
+        color: 0xfcd116,
+        metalness: 0.9,
+        roughness: 0.1,
+        emissive: 0xca8a04
+      }));
+      coinMesh.position.set(block.x, block.y + 0.6, block.z);
+      scene.add(coinMesh);
+
+      floatingEffects.push({
+        mesh: coinMesh,
+        startY: block.y + 0.6,
+        progress: 0,
+        maxLife: 0.55
+      });
+    }
+
+    // =========================================================================
+    // 11. BUCLES DE CONTROL, DESKTOP FALLBACK Y RATÓN
+    // =========================================================================
+    let isDesktopLocked = false;
+    let desktopYaw = 0;
+    let desktopPitch = 0;
+
+    window.addEventListener('keydown', (e) => {
+      soundFX.init();
+      switch (e.code) {
+        case 'KeyW': case 'ArrowUp': player.moveForward = true; break;
+        case 'KeyS': case 'ArrowDown': player.moveBackward = true; break;
+        case 'KeyA': case 'ArrowLeft': player.moveLeft = true; break;
+        case 'KeyD': case 'ArrowRight': player.moveRight = true; break;
+        case 'Space':
+          if (player.isGrounded) {
+            player.velocityY = 8.8;
+            player.isGrounded = false;
+            soundFX.playJump();
+          }
+          break;
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      switch (e.code) {
+        case 'KeyW': case 'ArrowUp': player.moveForward = false; break;
+        case 'KeyS': case 'ArrowDown': player.moveBackward = false; break;
+        case 'KeyA': case 'ArrowLeft': player.moveLeft = false; break;
+        case 'KeyD': case 'ArrowRight': player.moveRight = false; break;
+      }
+    });
+
+    document.getElementById('btn-play-desktop').addEventListener('click', () => {
+      soundFX.init();
+      document.getElementById('launcher-ui').style.display = 'none';
+      document.getElementById('reticle').style.display = 'block';
+      canvas.requestPointerLock();
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      isDesktopLocked = (document.pointerLockElement === canvas);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDesktopLocked || renderer.xr.isPresenting) return;
+      const sensitivity = 0.0022;
+      desktopYaw -= e.movementX * sensitivity;
+      desktopPitch -= e.movementY * sensitivity;
+      desktopPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, desktopPitch));
+
+      camera.rotation.set(desktopPitch, 0, 0, 'YXZ');
+      cameraRig.rotation.y = desktopYaw;
+    });
+
+    // =========================================================================
+    // 12. WEBXR LAUNCHER (META QUEST 3 / 3S NATIVO)
+    // =========================================================================
+    const btnEnterVR = document.getElementById('btn-enter-vr');
+
+    if ('xr' in navigator) {
+      navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+        if (supported) {
+          btnEnterVR.textContent = '🥽 INICIAR EN META QUEST VR';
+        } else {
+          btnEnterVR.textContent = '⚠️ VR NO DISPONIBLE (JUGAR MODO PC)';
+        }
+      });
+    }
+
+    btnEnterVR.addEventListener('click', async () => {
+      soundFX.init();
+      if (!navigator.xr) {
+        alert('WebXR no está disponible en este navegador. Puedes jugar en Modo Escritorio.');
+        return;
+      }
+
+      try {
+        const session = await navigator.xr.requestSession('immersive-vr', {
+          optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+        });
+        await renderer.xr.setSession(session);
+        document.getElementById('launcher-ui').style.display = 'none';
+
+        session.addEventListener('end', () => {
+          document.getElementById('launcher-ui').style.display = 'flex';
+        });
+      } catch (err) {
+        console.warn('Fallo al iniciar sesión VR:', err);
+        // Fallback inmediato a modo escritorio
+        document.getElementById('launcher-ui').style.display = 'none';
+        document.getElementById('reticle').style.display = 'block';
+        canvas.requestPointerLock();
+      }
+    });
+
+    // =========================================================================
+    // 13. BUCLE PRINCIPAL DE ANIMACIÓN Y FÍSICAS (RENDER LOOP)
+    // =========================================================================
+    const clock = new THREE.Clock();
+
+    renderer.setAnimationLoop(() => {
+      const dt = Math.min(clock.getDelta(), 0.04); // Capping para evitar túneles de colisión
+      const time = clock.getElapsedTime();
+
+      // -----------------------------------------------------------------------
+      // A. LECTURA ROBUSTA DE MANDOS TOUCH DE META QUEST (GAMEPAD POLLING)
+      // -----------------------------------------------------------------------
+      let xrMoveX = 0;
+      let xrMoveZ = 0;
+
+      const session = renderer.xr.getSession();
+      if (session && session.inputSources) {
+        for (const source of session.inputSources) {
+          if (!source.gamepad) continue;
+          const gp = source.gamepad;
+
+          // Mando Izquierdo: Locomoción continua proyectada en el plano XZ
+          if (source.handedness === 'left') {
+            let stickX = 0;
+            let stickY = 0;
+
+            // Fallback entre axes[2,3] (estándar WebXR) y axes[0,1]
+            if (gp.axes.length >= 4 && (Math.abs(gp.axes[2]) > 0.05 || Math.abs(gp.axes[3]) > 0.05)) {
+              stickX = gp.axes[2];
+              stickY = gp.axes[3];
+            } else if (gp.axes.length >= 2) {
+              stickX = gp.axes[0];
+              stickY = gp.axes[1];
+            }
+
+            // Aplicar Deadzone
+            const deadzone = 0.15;
+            if (Math.abs(stickX) < deadzone) stickX = 0;
+            if (Math.abs(stickY) < deadzone) stickY = 0;
+
+            xrMoveX = stickX;
+            xrMoveZ = stickY;
+          }
+
+          // Mando Derecho: Snap Turn y Salto
+          if (source.handedness === 'right') {
+            let turnX = 0;
+            if (gp.axes.length >= 4 && Math.abs(gp.axes[2]) > 0.05) {
+              turnX = gp.axes[2];
+            } else if (gp.axes.length >= 2) {
+              turnX = gp.axes[0];
+            }
+
+            // Snap Turn (Giro de 45° con debounce para prevenir cinetosis)
+            const snapThreshold = 0.6;
+            const resetThreshold = 0.2;
+            if (Math.abs(turnX) > snapThreshold && snapTurnReady) {
+              const snapAngle = (turnX > 0 ? -Math.PI / 4 : Math.PI / 4);
+              cameraRig.rotation.y += snapAngle;
+              snapTurnReady = false;
+            } else if (Math.abs(turnX) < resetThreshold) {
+              snapTurnReady = true;
+            }
+
+            // Salto con Botón A (buttons[4]), Gatillo (buttons[0]) o Grip (buttons[1])
+            const isJumpPressed = (gp.buttons[4]?.pressed) ||
+                                  (gp.buttons[5]?.pressed) ||
+                                  (gp.buttons[0]?.pressed) ||
+                                  (gp.buttons[1]?.pressed);
+
+            if (isJumpPressed && player.isGrounded) {
+              player.velocityY = 8.8;
+              player.isGrounded = false;
+              soundFX.playJump();
+            }
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // B. APLICACIÓN DE MOVIMIENTO HORIZONTAL (CAMERA RIG EXCLUSIVO)
+      // -----------------------------------------------------------------------
+      camera.getWorldDirection(_camDirection);
+      _camDirection.y = 0;
+      _camDirection.normalize();
+
+      _camRight.crossVectors(_camDirection, new THREE.Vector3(0, 1, 0)).normalize();
+
+      const speed = 5.2; // Velocidad de carrera ágil y cómoda en VR
+      let moveDir = new THREE.Vector3();
+
+      if (renderer.xr.isPresenting) {
+        // En VR: Stick izquierdo (xrMoveZ negativo = avanzar)
+        moveDir.addScaledVector(_camRight, xrMoveX);
+        moveDir.addScaledVector(_camDirection, -xrMoveZ);
+      } else {
+        // En Modo Desktop: WASD
+        if (player.moveForward) moveDir.add(_camDirection);
+        if (player.moveBackward) moveDir.addScaledVector(_camDirection, -1);
+        if (player.moveRight) moveDir.add(_camRight);
+        if (player.moveLeft) moveDir.addScaledVector(_camRight, -1);
+      }
+
+      if (moveDir.lengthSq() > 0.001) {
+        moveDir.normalize();
+        const nextX = cameraRig.position.x + moveDir.x * speed * dt;
+        const nextZ = cameraRig.position.z + moveDir.z * speed * dt;
+
+        // Detección de colisión horizontal contra tuberías y bloques sólidos
+        let canMoveX = true;
+        let canMoveZ = true;
+        const playerRadius = 0.38;
+
+        for (const obs of solidObstacles) {
+          // Altura del jugador relativa al obstáculo
+          const playerFeetY = cameraRig.position.y;
+          const playerHeadY = cameraRig.position.y + 1.8;
+          if (playerHeadY > obs.minY && playerFeetY < obs.maxY) {
+            if (nextX + playerRadius > obs.minX && nextX - playerRadius < obs.maxX &&
+                cameraRig.position.z + playerRadius > obs.minZ && cameraRig.position.z - playerRadius < obs.maxZ) {
+              canMoveX = false;
+            }
+            if (cameraRig.position.x + playerRadius > obs.minX && cameraRig.position.x - playerRadius < obs.maxX &&
+                nextZ + playerRadius > obs.minZ && nextZ - playerRadius < obs.maxZ) {
+              canMoveZ = false;
+            }
+          }
+        }
+
+        if (canMoveX) cameraRig.position.x = nextX;
+        if (canMoveZ) cameraRig.position.z = nextZ;
+      }
+
+      // -----------------------------------------------------------------------
+      // C. FÍSICAS VERTICALES (GRAVEDAD Y COLISIÓN CON PLATAFORMAS/SUELO)
+      // -----------------------------------------------------------------------
+      const gravity = -24.0;
+      player.velocityY += gravity * dt;
+      cameraRig.position.y += player.velocityY * dt;
+
+      let currentGroundHeight = 0; // Altura del suelo base
+      player.isGrounded = false;
+
+      // Colisión vertical con plataformas sólidas (ladrillos y tuberías)
+      for (const obs of solidObstacles) {
+        if (cameraRig.position.x > obs.minX - 0.25 && cameraRig.position.x < obs.maxX + 0.25 &&
+            cameraRig.position.z > obs.minZ - 0.25 && cameraRig.position.z < obs.maxZ + 0.25) {
+          // Si el jugador desciende y cae sobre la parte superior
+          if (cameraRig.position.y <= obs.maxY && cameraRig.position.y >= obs.maxY - 0.6 && player.velocityY <= 0) {
+            currentGroundHeight = Math.max(currentGroundHeight, obs.maxY);
+          }
+        }
+      }
+
+      if (cameraRig.position.y <= currentGroundHeight) {
+        cameraRig.position.y = currentGroundHeight;
+        player.velocityY = 0;
+        player.isGrounded = true;
+      }
+
+      // -----------------------------------------------------------------------
+      // D. INTERACCIÓN CON BLOQUES '?' (GOLPE DE CABEZA O GUANTES 6DoF)
+      // -----------------------------------------------------------------------
+      camera.getWorldPosition(_playerHeadPos);
+      controllerLeft.getWorldPosition(_handLPos);
+      controllerRight.getWorldPosition(_handRPos);
+
+      questionBlocks.forEach(block => {
+        // Animación de rebote del bloque
+        if (block.bounceTimer > 0) {
+          block.bounceTimer -= dt;
+          const bounceOffset = Math.sin((0.25 - block.bounceTimer) / 0.25 * Math.PI) * 0.28;
+          block.mesh.position.y = block.baseY + bounceOffset;
+          if (block.bounceTimer <= 0) {
+            block.mesh.position.y = block.baseY;
+          }
+        }
+
+        if (!block.isHit) {
+          // Golpe 1: Con la cabeza desde abajo durante un salto
+          const distHeadX = Math.abs(_playerHeadPos.x - block.x);
+          const distHeadZ = Math.abs(_playerHeadPos.z - block.z);
+          const headUnderBlock = (_playerHeadPos.y >= block.y - 0.75 && _playerHeadPos.y <= block.y);
+
+          if (distHeadX < 0.55 && distHeadZ < 0.55 && headUnderBlock && player.velocityY > 0) {
+            player.velocityY = -1.2; // Rebote hacia abajo
+            triggerQuestionBlock(block);
+          }
+
+          // Golpe 2: Puñetazo directo 6DoF con la mano izquierda o derecha
+          const distL = _handLPos.distanceTo(block.mesh.position);
+          const distR = _handRPos.distanceTo(block.mesh.position);
+          if (distL < 0.65 || distR < 0.65) {
+            triggerQuestionBlock(block);
+          }
+        }
+      });
+
+      // Animación de monedas de bonificación flotantes
+      for (let i = floatingEffects.length - 1; i >= 0; i--) {
+        const fx = floatingEffects[i];
+        fx.progress += dt;
+        fx.mesh.position.y = fx.startY + fx.progress * 2.8;
+        fx.mesh.rotation.y += 18 * dt;
+
+        if (fx.progress >= fx.maxLife) {
+          scene.remove(fx.mesh);
+          floatingEffects.splice(i, 1);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // E. MONEDAS RECOLECTABLES EN EL MUNDO
+      // -----------------------------------------------------------------------
+      coinsInWorld.forEach(coin => {
+        if (!coin.collected) {
+          coin.mesh.rotation.y += coin.spinSpeed * dt;
+          const distPlayer = cameraRig.position.distanceTo(coin.mesh.position);
+          if (distPlayer < 1.1) {
+            coin.collected = true;
+            scene.remove(coin.mesh);
+            player.coins++;
+            player.score += 100;
+            soundFX.playCoin();
+            updateHUD();
+          }
+        }
+      });
+
+      // -----------------------------------------------------------------------
+      // F. IA Y ANIMACIÓN DE GOOMBAS (PATRULLA Y APLASTAMIENTO)
+      // -----------------------------------------------------------------------
+      goombas.forEach(g => {
+        if (g.isSquashed) {
+          g.squashTimer += dt;
+          if (g.squashTimer > 1.2 && g.group.parent) {
+            scene.remove(g.group);
+          }
+          return;
+        }
+
+        // Patrulla en eje Z
+        g.group.position.z += g.dirZ * g.speed * dt;
+        if (g.group.position.z <= g.minZ) {
+          g.dirZ = 1;
+        } else if (g.group.position.z >= g.maxZ) {
+          g.dirZ = -1;
+        }
+
+        // Animación de marcha con bamboleo de pies
+        g.walkAnim += dt * 10;
+        g.footL.rotation.x = Math.sin(g.walkAnim) * 0.35;
+        g.footR.rotation.x = -Math.sin(g.walkAnim) * 0.35;
+
+        // Detección de colisión con el jugador
+        const distToPlayer = new THREE.Vector2(
+          cameraRig.position.x - g.group.position.x,
+          cameraRig.position.z - g.group.position.z
+        ).length();
+
+        if (distToPlayer < 0.72) {
+          // Aplastamiento desde arriba (Stomp)
+          const isFallingOnTop = (player.velocityY < 0 && cameraRig.position.y >= g.group.position.y + 0.25);
+          if (isFallingOnTop) {
+            g.isSquashed = true;
+            g.group.scale.set(1.4, 0.2, 1.4); // Efecto aplastado plano
+            player.velocityY = 7.5; // Salto propulsado tras aplastar
+            player.score += 200;
+            soundFX.playStomp();
+            updateHUD();
+          } else {
+            // Daño al jugador por contacto lateral
+            damagePlayer();
+          }
+        }
+      });
+
+      // -----------------------------------------------------------------------
+      // G. CICLO DE ANIMACIÓN DE PLANTAS PIRAÑA
+      // -----------------------------------------------------------------------
+      piranhaPlants.forEach(p => {
+        p.timer += dt;
+        const cycle = p.timer % 5.0; // Ciclo de 5 segundos
+
+        if (cycle < 1.2) {
+          // Subiendo desde la tubería
+          const progress = cycle / 1.2;
+          p.group.position.y = THREE.MathUtils.lerp(p.baseY, p.peakY, progress);
+        } else if (cycle < 3.4) {
+          // Asomada mordiendo
+          p.group.position.y = p.peakY;
+          // Comprobar colisión letal con el jugador
+          const distToPlayer = new THREE.Vector2(
+            cameraRig.position.x - p.x,
+            cameraRig.position.z - p.z
+          ).length();
+          if (distToPlayer < 1.15 && cameraRig.position.y < p.peakY + 1.2) {
+            damagePlayer();
+            soundFX.playPiranhaChomp();
+          }
+        } else if (cycle < 4.2) {
+          // Descendiendo a esconderse
+          const progress = (cycle - 3.4) / 0.8;
+          p.group.position.y = THREE.MathUtils.lerp(p.peakY, p.baseY, progress);
+        } else {
+          // Oculta en el fondo de la tubería
+          p.group.position.y = p.baseY;
+        }
+      });
+
+      // -----------------------------------------------------------------------
+      // H. CONDICIÓN DE VICTORIA (MÁSTIL DE BANDERA Y FORTALEZA)
+      // -----------------------------------------------------------------------
+      if (flagpoleEntity && !flagpoleEntity.isTriggered) {
+        const distToPole = cameraRig.position.distanceTo(flagpoleEntity.polePos);
+        if (distToPole < 2.4) {
+          flagpoleEntity.isTriggered = true;
+          player.isVictory = true;
+          player.score += 5000;
+          soundFX.playVictory();
+          updateHUD();
+        }
+      }
+
+      // Animación de descenso de la bandera al ganar
+      if (flagpoleEntity && flagpoleEntity.isTriggered) {
+        if (flagpoleEntity.flagY > 1.2) {
+          flagpoleEntity.flagY -= dt * 3.5;
+          flagpoleEntity.flagMesh.position.y = flagpoleEntity.flagY;
+        }
+        flagpoleEntity.starMesh.rotation.y += dt * 4;
+      }
+
+      // Manejo de invulnerabilidad parpadeante
+      if (player.isInvulnerable) {
+        player.invulnerableTimer -= dt;
+        if (player.invulnerableTimer <= 0) {
+          player.isInvulnerable = false;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // I. RENDERIZADO DEL FRAME
+      // -----------------------------------------------------------------------
+      renderer.render(scene, camera);
+    });
+
+    // Redimensionamiento responsivo
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
